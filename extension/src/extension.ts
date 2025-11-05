@@ -25,25 +25,72 @@ export function activate(context: vscode.ExtensionContext) {
 			{ enableScripts: true }
 		);
 
-		panel.webview.html = `
-			<!DOCTYPE html>
+		// set the HTML
+    	panel.webview.html = getWebviewHtml();
+
+		function getWebviewHtml(): string {
+			const nonce = getNonce();
+			return `<!DOCTYPE html>
 			<html lang="en">
 			<head>
-			<meta charset="UTF-8">
-			<title>AI Doc Helper</title>
-			<style>
-			body {
-				font-family: sans-serif;
-				padding: 20px;
-			}
-			</style>
+				<meta charset="UTF-8">
+				<!-- Allow script (nonce) + XHR/fetch to backend -->
+				<meta http-equiv="Content-Security-Policy"
+				content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src http://127.0.0.1:8000;">
+				<meta name="viewport" content="width=device-width, initial-scale=1.0">
+				<title>AI Doc Helper</title>
+				<style>
+				body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 20px; }
+				.card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; max-width: 560px; }
+				.row { margin-top: 12px; }
+				button { padding: 8px 12px; border-radius: 8px; border: 1px solid #e5e7eb; cursor: pointer; }
+				code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
+				</style>
 			</head>
 			<body>
-			<h2>Hello AI Docs 👋</h2>
-			<p>This is your static webview panel.</p>
+				<div class="card">
+				<h2>Hello AI Docs 👋</h2>
+				<p>This panel can now talk to a local FastAPI backend.</p>
+
+				<div class="row">
+					<button id="ping">Ping Backend</button>
+					<span id="status" style="margin-left:10px;color:#6b7280;">(idle)</span>
+				</div>
+
+				<pre id="result" class="row"></pre>
+				</div>
+
+				<script nonce="${nonce}">
+				const pingBtn = document.getElementById('ping');
+				const statusEl = document.getElementById('status');
+				const resultEl = document.getElementById('result');
+
+				async function ping() {
+					statusEl.textContent = 'contacting http://127.0.0.1:8000/health ...';
+					resultEl.textContent = '';
+					try {
+					const res = await fetch('http://127.0.0.1:8000/health');
+					const json = await res.json();
+					statusEl.textContent = res.ok ? '✓ online' : '✗ error';
+					resultEl.textContent = JSON.stringify(json, null, 2);
+					} catch (e) {
+					statusEl.textContent = '✗ failed';
+					resultEl.textContent = String(e);
+					}
+				}
+
+				pingBtn.addEventListener('click', ping);
+				</script>
 			</body>
 			</html>`;
+		}
 
+		function getNonce() {
+			const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+			let s = '';
+			for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+			return s;
+		}
 	});
 
 	context.subscriptions.push(disposable);
