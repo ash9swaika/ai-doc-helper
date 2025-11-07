@@ -40,46 +40,101 @@ export function activate(context: vscode.ExtensionContext) {
 				<meta name="viewport" content="width=device-width, initial-scale=1.0">
 				<title>AI Doc Helper</title>
 				<style>
-				body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 20px; }
-				.card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; max-width: 560px; }
-				.row { margin-top: 12px; }
-				button { padding: 8px 12px; border-radius: 8px; border: 1px solid #e5e7eb; cursor: pointer; }
-				code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
+					body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 20px; }
+					.card { border: 1px solid var(--border) #e5e7eb; border-radius: 12px; padding: 16px; max-width: 720px; }
+					.row { margin-top: 12px; display:flex; gap:8px; align-items:center; }
+					input[type="text"] { flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; }
+					button { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border) #e5e7eb; cursor: pointer; }
+					.muted { color: var(--muted); }
+					ul { padding-left: 18px; }
+					li { margin: 8px 0; }
+					a { text-decoration: none; }
+					pre { background:#f8fafc; padding:8px; border-radius:8px; overflow:auto; }
+    				code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
 				</style>
 			</head>
 			<body>
 				<div class="card">
-				<h2>Hello AI Docs 👋</h2>
-				<p>This panel can now talk to a local FastAPI backend.</p>
+					<h2>Hello AI Docs 👋</h2>
+					<p class=muted>Connected to local backend at <code>http://127.0.0.1:8000</code></p>
 
-				<div class="row">
-					<button id="ping">Ping Backend</button>
-					<span id="status" style="margin-left:10px;color:#6b7280;">(idle)</span>
-				</div>
+					<div class="row">
+						<input id="q" type="text" placeholder="Search docs… e.g. 'fastapi'" />
+						<button id="search">Fetch Docs</button>
+						<span id="status" class="muted">(idle)</span>
+					</div>
 
-				<pre id="result" class="row"></pre>
+					<div class="row"><button id="ping">Ping Backend</button></div>
+
+					<div id="results" class="row" style="flex-direction:column;align-items:stretch;"></div>
 				</div>
 
 				<script nonce="${nonce}">
-				const pingBtn = document.getElementById('ping');
-				const statusEl = document.getElementById('status');
-				const resultEl = document.getElementById('result');
+					const pingBtn = document.getElementById('ping');
+					const searchBtn = document.getElementById('search');
+					const statusEl = document.getElementById('status');
+					const resultEl = document.getElementById('results');
+					const qInput = document.getElementById('q');
 
 				async function ping() {
 					statusEl.textContent = 'contacting http://127.0.0.1:8000/health ...';
 					resultEl.textContent = '';
 					try {
-					const res = await fetch('http://127.0.0.1:8000/health');
-					const json = await res.json();
-					statusEl.textContent = res.ok ? '✓ online' : '✗ error';
-					resultEl.textContent = JSON.stringify(json, null, 2);
+						const res = await fetch('http://127.0.0.1:8000/health');
+						const json = await res.json();
+						statusEl.textContent = res.ok ? '✓ online' : '✗ error';
+						resultEl.textContent = JSON.stringify(json, null, 2);
 					} catch (e) {
-					statusEl.textContent = '✗ failed';
-					resultEl.textContent = String(e);
+						statusEl.textContent = '✗ failed';
+						resultEl.textContent = String(e);
 					}
 				}
 
+				async function renderResults(data) {
+					if(!data || !data.results) {
+						resultEl.innerHTML='';
+						return;
+					}
+					const html = [
+						'<div class="muted">Results for query: "<code>' + data.query + '</code>"</div>',
+						'<ul>',
+						...data.results.map(r => 
+							('<li><a href="' + r.url + '" target="_blank"><strong>' + escapeHtml(r.title) + '</strong></a><br/><span class="muted">' + escapeHtml(r.snippet) + '</span></li>')
+						),
+						'</ul>'
+					].join('');
+					resultEl.innerHTML = html;
+				}
+
+				async function doSearch() {
+					const q = qInput.value.trim();
+					if(!q) {statusEl.textContent = 'enter a query'; return;}
+
+					statusEl.textContent = 'searching...';
+					resultEl.innerHTML = '';
+
+					try {
+						const res = await fetch('http://127.0.0.1:8000/search?' + new URLSearchParams({query:q}));
+						const json = await res.json();
+						if (res.ok) {
+							statusEl.textContent = 'done';
+							renderResults(json);
+						} else {
+							statusEl.textContent = '✗ error';
+							resultEl.textContent = JSON.stringify(json, null, 2);
+						}
+					} catch (e) {
+						statusEl.textContent = '✗ failed';
+						resultEl.textContent = String(e);
+					}
+				}
+				
+				function escapeHtml(s){return s.replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#039;" }[m]));}
+				
+				searchBtn.addEventListener('click', doSearch);
 				pingBtn.addEventListener('click', ping);
+				qInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') doSearch(); });
+
 				</script>
 			</body>
 			</html>`;
