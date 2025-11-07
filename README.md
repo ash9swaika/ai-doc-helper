@@ -13,3 +13,6 @@ cd extension
 npm install
 npm run compile
 # Press F5 in VS Code → open "AI: Lookup Docs"
+
+### Current Status (v0.1)
+The VS Code extension successfully launches via `AI: Lookup Docs`, opens a working webview panel, and connects to a local FastAPI backend (built with uv) through a live `/health` ping.
