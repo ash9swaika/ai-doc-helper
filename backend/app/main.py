@@ -1,9 +1,15 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from pathlib import Path
+from typing import List, Dict, Optional
+from app.project_detect import detect_multi
+from app.env_python import env_python_packages
+from app.project_resolve import resolve_all
+from app.validate_python import discover_declared_requirements, diff_declared_installed
 
 app = FastAPI(title="AI Doc Helper Backend")
+ROOT = Path(__file__).resolve().parents[2]
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,10 +19,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/health")
-def health():
-    return {"ok": True, "service": "ai-doc-helper-backend"}
-
 class SearchResult(BaseModel):
     title: str
     snippet: str
@@ -25,6 +27,68 @@ class SearchResult(BaseModel):
 class SearchResponse(BaseModel):
     query: str
     results: List[SearchResult]
+
+class ResolveRequest(BaseModel):
+    folder_python_paths: Optional[Dict[str, str]] = None  # map of folder -> python path
+
+class ValidateResponse(BaseModel):
+    workdir: str
+    interpreter: str
+    missing: list
+    incompatible: list
+
+
+
+@app.get("/project/detect-multi")
+def project_detect_multi():
+    """Detects Python and Node in repo root and first-level subfolders (e.g., backend/, extension/)."""
+    det = detect_multi(ROOT, scan_depth=1)
+    # dataclasses to plain dict
+    return {
+        "roots": [
+            {
+                "path": r.path,
+                "ecosystems": [
+                    {
+                        "name": e.name,
+                        "score": e.score,
+                        "files": e.files,
+                        "packages": e.packages,
+                    } for e in r.ecosystems
+                ],
+            } for r in det.roots
+        ]
+    }
+
+@app.get("/env/python")
+def env_python(workdir: str | None = Query(None), python_path: str | None = Query(None)):
+    """
+    Return installed Python packages for a given interpreter or workdir.
+    """
+    return env_python_packages(workdir=workdir, python_path=python_path)
+
+
+@app.get("/env/validate-python", response_model=ValidateResponse)
+def validate_python(workdir: str = Query(...), python_path: str | None = Query(None)):
+    """
+    Compare project's declared Python deps (requirements.txt / pyproject.toml)
+    vs packages installed in the provided interpreter (or guessed).
+    """
+    declared = discover_declared_requirements(Path(workdir))
+    env = env_python_packages(workdir=workdir, python_path=python_path)
+    missing, incompatible = diff_declared_installed(declared, env["packages"])
+    return {
+        "workdir": workdir,
+        "interpreter": env["interpreter"],
+        "missing": missing,
+        "incompatible": incompatible,
+    }
+
+
+@app.get("/health")
+def health():
+    return {"ok": True, "service": "ai-doc-helper-backend"}
+
 
 @app.get("/search", response_model=SearchResponse)
 def search(query: str = Query(..., min_length=1, max_length=200)):
@@ -46,3 +110,7 @@ def search(query: str = Query(..., min_length=1, max_length=200)):
     q = query.lower()
     results = [r for r in mock if q in r.title.lower() or q in r.snippet.lower()] or mock
     return SearchResponse(query=query, results=results)
+
+@app.post("/project/resolve")
+def project_resolve(body: ResolveRequest):
+    return resolve_all(ROOT, folder_python_paths=body.folder_python_paths or {})

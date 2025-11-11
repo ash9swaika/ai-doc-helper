@@ -5,7 +5,9 @@ description = "FastAPI backend for the AI Doc Helper extension"
 requires-python = ">=3.9"
 dependencies = [
   "fastapi",
-  "uvicorn[standard]"
+  "ipykernel>=6.31.0",
+  "packaging>=25.0",
+  "uvicorn[standard]",
 ]
 
 [build-system]
