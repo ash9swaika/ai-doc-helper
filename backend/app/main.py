@@ -1,3 +1,4 @@
+from app.api import indexer
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,6 +10,9 @@ from app.project_resolve import resolve_all
 from app.validate_python import discover_declared_requirements, diff_declared_installed
 
 app = FastAPI(title="AI Doc Helper Backend")
+app.include_router(indexer.router, prefix="/search", tags=["search"])
+
+
 ROOT = Path(__file__).resolve().parents[2]
 
 app.add_middleware(
@@ -110,6 +114,12 @@ def search(query: str = Query(..., min_length=1, max_length=200)):
     q = query.lower()
     results = [r for r in mock if q in r.title.lower() or q in r.snippet.lower()] or mock
     return SearchResponse(query=query, results=results)
+
+@app.get("/__probe")
+def __probe():
+    import inspect
+    return {"main_file": __file__, "app_id": id(app)}
+
 
 @app.post("/project/resolve")
 def project_resolve(body: ResolveRequest):
