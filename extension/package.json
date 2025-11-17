@@ -9,14 +9,15 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:DocHelper.validatePythonEnvs",
+    "onCommand:DocHelper.helloWorld"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "DocHelper.helloWorld",
-        "title": "AI: Lookup Docs"
-      }
+      {"command": "DocHelper.helloWorld", "title": "AI: Lookup Docs"},
+      {"command": "DocHelper.validatePythonEnvs", "title": "AI: Validate Python Environments"}
     ]
   },
   "scripts": {
