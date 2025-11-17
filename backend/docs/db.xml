@@ -1,0 +1,66 @@
+<database name="ai_doc_helper">
+  <table name="sources">
+    <column name="id" type="INTEGER" primaryKey="true" nullable="false" />
+    <column name="package" type="TEXT" nullable="false" />
+    <column name="version" type="TEXT" nullable="false" />
+    <column name="base_url" type="TEXT" nullable="false" />
+    <column name="checksum" type="TEXT" nullable="true" />
+    <uniqueConstraint name="uq_sources_package_version">
+      <columnRef name="package" />
+      <columnRef name="version" />
+    </uniqueConstraint>
+  </table>
+
+  <table name="documents">
+    <column name="id" type="INTEGER" primaryKey="true" nullable="false" />
+    <column name="source_id" type="INTEGER" nullable="false" />
+    <column name="url" type="TEXT" nullable="false" />
+    <column name="path" type="TEXT" nullable="true" />
+    <column name="title" type="TEXT" nullable="true" />
+    <column name="text" type="TEXT" nullable="true" />
+    <column name="fetched_at" type="TEXT" nullable="false" default="CURRENT_TIMESTAMP" />
+
+    <uniqueConstraint name="uq_documents_source_url">
+      <columnRef name="source_id" />
+      <columnRef name="url" />
+    </uniqueConstraint>
+
+    <foreignKey name="fk_documents_sources" referencedTable="sources">
+      <columnRef name="source_id" referencedColumn="id" onDelete="CASCADE" />
+    </foreignKey>
+  </table>
+
+  <table name="chunks">
+    <column name="id" type="INTEGER" primaryKey="true" nullable="false" />
+    <column name="document_id" type="INTEGER" nullable="false" />
+    <column name="pos" type="INTEGER" nullable="false" />
+    <column name="text" type="TEXT" nullable="false" />
+
+    <foreignKey name="fk_chunks_documents" referencedTable="documents">
+      <columnRef name="document_id" referencedColumn="id" onDelete="CASCADE" />
+    </foreignKey>
+  </table>
+
+  <!-- FTS5 virtual table (logical representation) -->
+  <virtualTable name="docs_fts" module="fts5">
+    <column name="text" type="TEXT" />
+    <column name="title" type="TEXT" />
+    <column name="url" type="TEXT" />
+    <column name="package" type="TEXT" />
+    <column name="version" type="TEXT" />
+    <column name="document_id" type="INTEGER" indexed="false" />
+    <column name="chunk_id" type="INTEGER" indexed="false" />
+    <option name="tokenize" value="porter" />
+  </virtualTable>
+
+  <!-- Relationships for diagramming -->
+  <relationship name="sources_documents" type="one-to-many">
+    <endpoint table="sources" column="id" role="parent" />
+    <endpoint table="documents" column="source_id" role="child" />
+  </relationship>
+
+  <relationship name="documents_chunks" type="one-to-many">
+    <endpoint table="documents" column="id" role="parent" />
+    <endpoint table="chunks" column="document_id" role="child" />
+  </relationship>
+</database>
