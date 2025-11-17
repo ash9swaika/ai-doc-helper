@@ -1,6 +1,44 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import * as path from 'path';
+
+type MissingReq = { name: string; required: string };
+type IncompatibleReq = { name: string; required: string; installed: string };
+
+interface ValidateResponse {
+  workdir: string;
+  interpreter: string;
+  missing: MissingReq[];
+  incompatible: IncompatibleReq[];
+}
+
+interface DetectMultiResponse {
+  roots: Array<{
+    path: string;
+    ecosystems: Array<{
+      name: 'python' | 'node';
+      score: number;
+      files: string[];
+      packages: Array<{ name: string; version: string }>;
+    }>;
+  }>;
+}
+
+// Simple type guard for ValidateResponse
+function isValidateResponse(x: any): x is ValidateResponse {
+  return x
+    && typeof x.workdir === 'string'
+    && typeof x.interpreter === 'string'
+    && Array.isArray(x.missing)
+    && Array.isArray(x.incompatible);
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  const data: unknown = await res.json();
+  return data as T; // (we’ll guard selectively where needed)
+}
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -143,13 +181,100 @@ export function activate(context: vscode.ExtensionContext) {
 		function getNonce() {
 			const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 			let s = '';
-			for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+			for (let i = 0; i < 32; i++) {s += chars.charAt(Math.floor(Math.random() * chars.length));}
 			return s;
 		}
 	});
 
 	context.subscriptions.push(disposable);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('DocHelper.validatePythonEnvs', validateAllPythonFolders)
+	);
 }
+
+
+
+export async function validatePythonEnvForFolder(workdir: string, pythonPath?: string) {
+  const url = new URL('http://127.0.0.1:8000/env/validate-python');
+  url.searchParams.set('workdir', workdir);
+  if (pythonPath) {url.searchParams.set('python_path', pythonPath);}
+
+  let data: unknown;
+  try {
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    }
+    data = await res.json();
+  } catch (err: any) {
+    vscode.window.showErrorMessage(
+      `Validation request failed for ${path.basename(workdir)}: ${err?.message ?? String(err)}`
+    );
+    return;
+  }
+
+  if (!isValidateResponse(data)) {
+    vscode.window.showErrorMessage(
+      `Validation failed for ${path.basename(workdir)}: unexpected response shape.`
+    );
+    return;
+  }
+
+  const { missing, incompatible, interpreter } = data;
+
+  if (missing.length === 0 && incompatible.length === 0) {
+    vscode.window.showInformationMessage(
+      `Python environment OK for ${path.basename(workdir)} (interpreter: ${interpreter}).`
+    );
+    return;
+  }
+
+  const lines: string[] = [];
+  if (missing.length) {
+    lines.push('Missing:');
+    for (const m of missing.slice(0, 5)) {lines.push(`• ${m.name} (${m.required})`);}
+    if (missing.length > 5) {lines.push(`… +${missing.length - 5} more`);}
+  }
+  if (incompatible.length) {
+    lines.push('Version mismatches:');
+    for (const x of incompatible.slice(0, 5)) {lines.push(`• ${x.name} required ${x.required}, installed ${x.installed}`);}
+    if (incompatible.length > 5) {lines.push(`… +${incompatible.length - 5} more`);}
+  }
+
+  const msg = `Environment mismatch for ${path.basename(workdir)} (interpreter: ${interpreter}).\n\n${lines.join('\n')}`;
+  const pick = await vscode.window.showErrorMessage(msg, 'Pick Interpreter', 'Show Details', 'Index Anyway');
+
+  if (pick === 'Pick Interpreter') {
+    await vscode.commands.executeCommand('python.setInterpreter');
+  } else if (pick === 'Show Details') {
+    const doc = await vscode.workspace.openTextDocument({ language: 'json', content: JSON.stringify(data, null, 2) });
+    await vscode.window.showTextDocument(doc, { preview: true });
+  } else if (pick === 'Index Anyway') {
+    // proceed with indexing regardless (call your indexing flow here)
+  }
+}
+
+async function validateAllPythonFolders() {
+  const res = await fetch('http://127.0.0.1:8000/project/detect-multi');
+  const det = (await res.json()) as DetectMultiResponse;
+
+  const pythonFolders = det.roots
+    .filter(r => r.ecosystems.some(e => e.name === 'python'))
+    .map(r => r.path);
+
+  if (!pythonFolders.length) {
+    vscode.window.showInformationMessage('No Python projects detected in workspace.');
+    return;
+  }
+
+  for (const folder of pythonFolders) {
+    // optionally guess interpreter here and pass as 2nd arg
+    await validatePythonEnvForFolder(folder);
+  }
+}
+
+
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
